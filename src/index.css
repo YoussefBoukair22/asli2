@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: #ffffff;
+    color: #000000;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #f9f9f9; }
+  ::-webkit-scrollbar-thumb { background: #e0e0e0; }
+}
+
+@layer components {
+  /* Theme colours — light mode only */
+  .bg-theme        { background: #ffffff; }
+  .bg-theme-card   { background: #f8f8f8; }
+  .bg-theme-dark   { background: #f0f0f0; }
+  .text-theme      { color: #000000; }
+  .text-theme-muted{ color: #666666; }
+  .border-theme    { border-color: #e5e5e5; }
+
+  /* Skeleton loader */
+  .skeleton {
+    background: linear-gradient(90deg, #f5f5f5 25%, #ebebeb 50%, #f5f5f5 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* Hero grid */
+  .hero-grid {
+    background-image:
+      linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  /* Carousel */
+  .carousel-track {
+    display: flex;
+    gap: 1px;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Image zoom on hover */
+  .product-img-inner {
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .group:hover .product-img-inner { transform: scale(1.04); }
+
+  /* Hide scrollbar */
+  .scroll-x { overflow-x: auto; scrollbar-width: none; }
+  .scroll-x::-webkit-scrollbar { display: none; }
+
+  /* Form fields */
+  .form-field {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #e5e5e5;
+    padding: 12px 0;
+    font-size: 0.875rem;
+    color: #000;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: 'Outfit', sans-serif;
+  }
+  .form-field:focus { border-bottom-color: #000; }
+  .form-field::placeholder { color: #bbb; }
+}
+
+@keyframes shimmer {
+  0%  { background-position: 200% 0; }
+  100%{ background-position: -200% 0; }
+}
+
+@keyframes slideToast {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
