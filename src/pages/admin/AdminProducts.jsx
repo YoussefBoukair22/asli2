@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Pencil, Trash2, X, Upload, Search, Check } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, Upload, Search, Check, GripVertical } from 'lucide-react'
 import { useAdmin } from '../../context/AdminContext'
+import { uploadImage, deleteImage } from '../../lib/supabase'
 
 const CATEGORIES = ['T-Shirts', 'Hoodies', 'Pants', 'Jackets']
 const BG_COLORS = [
@@ -20,12 +21,12 @@ const EMPTY_FORM = {
   description: '', bgColor: '#f5f5f5', isNew: false,
   sizes: ['S', 'M', 'L', 'XL'],
   details: ['', '', '', ''],
-  imageUrl: '',
+  images: [], // Array of image URLs
 }
 
 function ProductForm({ initial, onSave, onCancel, title }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
-  const [imagePreview, setImagePreview] = useState(initial?.imageUrl || '')
+  const [uploading, setUploading] = useState(false)
   const [errors, setErrors] = useState({})
   const fileRef = useRef()
 
@@ -38,16 +39,38 @@ function ProductForm({ initial, onSave, onCancel, title }) {
     sizes: f.sizes.includes(s) ? f.sizes.filter(x => x !== s) : [...f.sizes, s]
   }))
 
-  const handleImage = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    // Convert to base64 so it persists in localStorage
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      setImagePreview(ev.target.result)
-      setForm(f => ({ ...f, imageUrl: ev.target.result }))
+  const handleImageUpload = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+
+    setUploading(true)
+    try {
+      const newImages = []
+      for (const file of files) {
+        const url = await uploadImage(file, initial?.id || Date.now())
+        newImages.push(url)
+      }
+      setForm(f => ({
+        ...f,
+        images: [...(f.images || []), ...newImages]
+      }))
+    } catch (err) {
+      alert('Failed to upload image: ' + err.message)
+    } finally {
+      setUploading(false)
     }
-    reader.readAsDataURL(file)
+  }
+
+  const removeImage = async (imageUrl, index) => {
+    try {
+      await deleteImage(imageUrl)
+      setForm(f => ({
+        ...f,
+        images: f.images.filter((_, i) => i !== index)
+      }))
+    } catch (err) {
+      alert('Failed to delete image: ' + err.message)
+    }
   }
 
   const handleSubmit = (e) => {
@@ -56,7 +79,12 @@ function ProductForm({ initial, onSave, onCancel, title }) {
     if (!form.name.trim()) errs.name = 'Required'
     if (!form.price || isNaN(parseFloat(form.price))) errs.price = 'Required'
     if (Object.keys(errs).length) { setErrors(errs); return }
-    onSave({ ...form, price: parseFloat(form.price), details: form.details.filter(Boolean) })
+    onSave({
+      ...form,
+      price: parseFloat(form.price),
+      details: form.details.filter(Boolean),
+      images: form.images || []
+    })
   }
 
   return (
@@ -82,78 +110,121 @@ function ProductForm({ initial, onSave, onCancel, title }) {
 
         <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-6">
 
-          {/* Image upload */}
+          {/* Image gallery */}
           <div>
-            <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-3">Product Image</label>
-            <div className="flex gap-4 items-start flex-wrap">
-              <div
-                className="w-24 h-32 shrink-0 flex items-center justify-center border border-gray-200 overflow-hidden"
-                style={{ background: form.bgColor }}
-              >
-                {imagePreview
-                  ? <img src={imagePreview} alt="" className="w-full h-full object-cover" />
-                  : <span className="font-head text-xs tracking-widest" style={{ color: 'rgba(0,0,0,0.15)' }}>ASLY</span>
-                }
-              </div>
-              <div className="flex-1 min-w-[200px]">
-                <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} className="hidden" />
-                <button
-                  type="button" onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-2 border border-gray-200 px-4 py-2.5 text-[10px] font-semibold tracking-widest uppercase text-gray-500 hover:border-black hover:text-black transition-colors"
-                >
-                  <Upload size={12} /> Upload Photo
-                </button>
-                <p className="text-[10px] text-gray-300 mt-2">JPG, PNG, WEBP — saved automatically</p>
+            <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-3">
+              Product Images
+            </label>
 
-                {/* Color picker */}
-                <p className="text-[9px] tracking-widest uppercase text-gray-400 mt-3 mb-2">Background color</p>
-                <div className="flex gap-2 flex-wrap">
-                  {BG_COLORS.map(c => (
+            {/* Image preview grid */}
+            {form.images && form.images.length > 0 && (
+              <div className="mb-4 grid grid-cols-4 gap-3">
+                {form.images.map((img, i) => (
+                  <div key={i} className="relative group">
+                    <img
+                      src={img}
+                      alt={`Product ${i + 1}`}
+                      className="w-full h-24 object-cover border border-gray-200"
+                    />
                     <button
-                      key={c.hex} type="button"
-                      onClick={() => setForm(f => ({ ...f, bgColor: c.hex }))}
-                      title={c.label}
-                      className="w-7 h-7 border-2 transition-all rounded-sm relative"
-                      style={{
-                        background: c.hex,
-                        borderColor: form.bgColor === c.hex ? '#000' : '#ddd',
-                      }}
+                      type="button"
+                      onClick={() => removeImage(img, i)}
+                      className="absolute inset-0 bg-black/0 group-hover:bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
                     >
-                      {form.bgColor === c.hex && (
-                        <span className="absolute inset-0 flex items-center justify-center">
-                          <Check size={10} style={{ color: c.hex === '#f5f5f5' || c.hex === '#e8e0d8' || c.hex === '#d4c5b0' ? '#000' : '#fff' }} />
-                        </span>
-                      )}
+                      <Trash2 size={16} className="text-white" />
                     </button>
-                  ))}
-                </div>
+                    {i === 0 && (
+                      <div className="absolute top-1 left-1 bg-black text-white text-[8px] px-1.5 py-0.5">
+                        Main
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload button */}
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-2 border border-gray-200 px-4 py-2.5 text-[10px] font-semibold tracking-widest uppercase text-gray-500 hover:border-black hover:text-black transition-colors disabled:opacity-50"
+              >
+                <Upload size={12} />
+                {uploading ? 'Uploading...' : 'Add Images'}
+              </button>
+              <p className="text-[10px] text-gray-300 mt-2">
+                Upload multiple JPG/PNG images. First image becomes main thumbnail.
+              </p>
+            </div>
+
+            {/* Background color picker */}
+            <div className="mt-4">
+              <p className="text-[9px] tracking-widest uppercase text-gray-400 mb-2">Fallback background color</p>
+              <div className="flex gap-2 flex-wrap">
+                {BG_COLORS.map(c => (
+                  <button
+                    key={c.hex}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, bgColor: c.hex }))}
+                    title={c.label}
+                    className="w-7 h-7 border-2 transition-all rounded-sm"
+                    style={{
+                      background: c.hex,
+                      borderColor: form.bgColor === c.hex ? '#000' : '#ddd',
+                    }}
+                  />
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Name + Price */}
+          {/* Basic info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="sm:col-span-2">
-              <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-2">Product Name *</label>
+              <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-2">
+                Product Name *
+              </label>
               <input
-                value={form.name} onChange={set('name')} placeholder="e.g. ASLY Classic Tee"
-                className={`w-full bg-transparent border-b py-3 text-sm text-black placeholder-gray-300 outline-none transition-colors ${errors.name ? 'border-red-400' : 'border-gray-200 focus:border-black'}`}
+                value={form.name}
+                onChange={set('name')}
+                placeholder="e.g. ASLI Classic Tee"
+                className={`w-full bg-transparent border-b py-3 text-sm text-black placeholder-gray-300 outline-none transition-colors ${
+                  errors.name ? 'border-red-400' : 'border-gray-200 focus:border-black'
+                }`}
               />
               {errors.name && <p className="text-red-500 text-[10px] mt-1">{errors.name}</p>}
             </div>
             <div>
               <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-2">Price (MAD) *</label>
               <input
-                type="number" step="0.01" min="0"
-                value={form.price} onChange={set('price')} placeholder="299"
-                className={`w-full bg-transparent border-b py-3 text-sm text-black placeholder-gray-300 outline-none transition-colors ${errors.price ? 'border-red-400' : 'border-gray-200 focus:border-black'}`}
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.price}
+                onChange={set('price')}
+                placeholder="299"
+                className={`w-full bg-transparent border-b py-3 text-sm text-black placeholder-gray-300 outline-none transition-colors ${
+                  errors.price ? 'border-red-400' : 'border-gray-200 focus:border-black'
+                }`}
               />
               {errors.price && <p className="text-red-500 text-[10px] mt-1">{errors.price}</p>}
             </div>
             <div>
               <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-2">Color Name</label>
               <input
-                value={form.color} onChange={set('color')} placeholder="e.g. Black"
+                value={form.color}
+                onChange={set('color')}
+                placeholder="e.g. Black"
                 className="w-full bg-transparent border-b border-gray-200 focus:border-black py-3 text-sm text-black placeholder-gray-300 outline-none transition-colors"
               />
             </div>
@@ -165,9 +236,13 @@ function ProductForm({ initial, onSave, onCancel, title }) {
             <div className="flex flex-wrap gap-2">
               {CATEGORIES.map(c => (
                 <button
-                  key={c} type="button" onClick={() => setForm(f => ({ ...f, category: c }))}
+                  key={c}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, category: c }))}
                   className={`px-4 py-2 text-[10px] font-semibold tracking-widest uppercase border transition-all ${
-                    form.category === c ? 'bg-black text-white border-black' : 'border-gray-200 text-gray-400 hover:border-black hover:text-black'
+                    form.category === c
+                      ? 'bg-black text-white border-black'
+                      : 'border-gray-200 text-gray-400 hover:border-black hover:text-black'
                   }`}
                 >
                   {c}
@@ -182,9 +257,13 @@ function ProductForm({ initial, onSave, onCancel, title }) {
             <div className="flex gap-2 flex-wrap">
               {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map(s => (
                 <button
-                  key={s} type="button" onClick={() => toggleSize(s)}
+                  key={s}
+                  type="button"
+                  onClick={() => toggleSize(s)}
                   className={`w-11 h-11 text-xs font-semibold border transition-all ${
-                    form.sizes.includes(s) ? 'bg-black text-white border-black' : 'border-gray-200 text-gray-400 hover:border-black hover:text-black'
+                    form.sizes.includes(s)
+                      ? 'bg-black text-white border-black'
+                      : 'border-gray-200 text-gray-400 hover:border-black hover:text-black'
                   }`}
                 >
                   {s}
@@ -197,7 +276,9 @@ function ProductForm({ initial, onSave, onCancel, title }) {
           <div>
             <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-2">Description</label>
             <textarea
-              value={form.description} onChange={set('description')} rows={3}
+              value={form.description}
+              onChange={set('description')}
+              rows={3}
               placeholder="Premium streetwear piece..."
               className="w-full bg-transparent border border-gray-200 focus:border-black p-3 text-sm text-black placeholder-gray-300 outline-none transition-colors resize-none"
             />
@@ -205,11 +286,15 @@ function ProductForm({ initial, onSave, onCancel, title }) {
 
           {/* Details */}
           <div>
-            <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-3">Product Details (up to 4)</label>
+            <label className="block text-[9px] tracking-[0.25em] uppercase text-gray-400 mb-3">
+              Product Details (up to 4)
+            </label>
             <div className="flex flex-col gap-3">
               {form.details.map((d, i) => (
                 <input
-                  key={i} value={d} onChange={e => setDetail(i, e.target.value)}
+                  key={i}
+                  value={d}
+                  onChange={e => setDetail(i, e.target.value)}
                   placeholder={`Detail ${i + 1} — e.g. 280gsm heavyweight cotton`}
                   className="w-full bg-transparent border-b border-gray-200 focus:border-black py-2 text-sm text-black placeholder-gray-300 outline-none transition-colors"
                 />
@@ -240,7 +325,8 @@ function ProductForm({ initial, onSave, onCancel, title }) {
               {initial ? '✓ Save Changes' : '+ Add Product'}
             </button>
             <button
-              type="button" onClick={onCancel}
+              type="button"
+              onClick={onCancel}
               className="px-6 border border-gray-200 text-gray-500 text-xs font-semibold tracking-widest uppercase hover:border-black hover:text-black transition-all"
             >
               Cancel
@@ -264,7 +350,7 @@ export default function AdminProducts() {
     .filter(p => filterCat === 'All' || p.category === filterCat)
     .filter(p => (p.name || '').toLowerCase().includes(search.toLowerCase()))
 
-  const handleAdd  = (data) => { addProduct(data); setShowForm(false) }
+  const handleAdd = (data) => { addProduct(data); setShowForm(false) }
   const handleEdit = (data) => { updateProduct(editProduct.id, data); setEditProduct(null) }
   const handleDelete = () => { deleteProduct(deleteId); setDeleteId(null) }
 
@@ -298,9 +384,12 @@ export default function AdminProducts() {
         <div className="flex gap-2 flex-wrap">
           {['All', ...CATEGORIES].map(c => (
             <button
-              key={c} onClick={() => setFilterCat(c)}
+              key={c}
+              onClick={() => setFilterCat(c)}
               className={`px-3 py-2 text-[10px] font-semibold tracking-widest uppercase border transition-all ${
-                filterCat === c ? 'bg-black text-white border-black' : 'border-gray-200 text-gray-400 hover:border-black hover:text-black'
+                filterCat === c
+                  ? 'bg-black text-white border-black'
+                  : 'border-gray-200 text-gray-400 hover:border-black hover:text-black'
               }`}
             >
               {c}
@@ -314,69 +403,75 @@ export default function AdminProducts() {
         <table className="w-full text-sm min-w-[600px]">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              {['Product', 'Category', 'Price (MAD)', 'Status', 'Actions'].map(h => (
-                <th key={h} className="text-left px-5 py-3 text-[9px] tracking-[0.2em] uppercase text-gray-400 font-semibold">{h}</th>
+              {['Product', 'Category', 'Price (MAD)', 'Images', 'Status', 'Actions'].map(h => (
+                <th key={h} className="text-left px-5 py-3 text-[9px] tracking-[0.2em] uppercase text-gray-400 font-semibold">
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-16 text-gray-300 text-xs tracking-widest uppercase">
+                <td colSpan={6} className="text-center py-16 text-gray-300 text-xs tracking-widest uppercase">
                   No products found
                 </td>
               </tr>
-            ) : filtered.map(p => (
-              <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-12 shrink-0 flex items-center justify-center overflow-hidden border border-gray-100"
-                      style={{ background: p.bgColor || '#f5f5f5' }}
-                    >
-                      {p.imageUrl
-                        ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                        : <span className="font-head text-[8px] tracking-widest" style={{ color: 'rgba(0,0,0,0.15)' }}>ASLY</span>
-                      }
+            ) : (
+              filtered.map(p => (
+                <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-12 shrink-0 flex items-center justify-center overflow-hidden border border-gray-100"
+                        style={{ background: p.bgColor || '#f5f5f5' }}
+                      >
+                        {p.images && p.images[0]
+                          ? <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+                          : <span className="font-head text-[8px] tracking-widest" style={{ color: 'rgba(0,0,0,0.15)' }}>ASLI</span>
+                        }
+                      </div>
+                      <div>
+                        <p className="text-black font-medium text-xs">{p.name}</p>
+                        <p className="text-gray-400 text-[10px]">{p.color || '—'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-black font-medium text-xs">{p.name}</p>
-                      <p className="text-gray-400 text-[10px]">{p.color || '—'}</p>
+                  </td>
+                  <td className="px-5 py-3 text-gray-500 text-xs">{p.category}</td>
+                  <td className="px-5 py-3 text-black font-semibold text-xs">{p.price?.toFixed(2)}</td>
+                  <td className="px-5 py-3 text-xs text-gray-500">
+                    {p.images && p.images.length > 0 ? `${p.images.length} image${p.images.length !== 1 ? 's' : ''}` : '—'}
+                  </td>
+                  <td className="px-5 py-3">
+                    {p.isNew
+                      ? <span className="text-[9px] font-bold tracking-widest uppercase bg-black text-white px-2 py-0.5">New</span>
+                      : <span className="text-[9px] text-gray-300 tracking-widest uppercase">—</span>
+                    }
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setEditProduct(p)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase border border-gray-200 text-gray-500 hover:border-black hover:text-black transition-all"
+                      >
+                        <Pencil size={11} /> Edit
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(p.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase border border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                      >
+                        <Trash2 size={11} /> Delete
+                      </button>
                     </div>
-                  </div>
-                </td>
-                <td className="px-5 py-3 text-gray-500 text-xs">{p.category}</td>
-                <td className="px-5 py-3 text-black font-semibold text-xs">{p.price?.toFixed(2)}</td>
-                <td className="px-5 py-3">
-                  {p.isNew
-                    ? <span className="text-[9px] font-bold tracking-widest uppercase bg-black text-white px-2 py-0.5">New</span>
-                    : <span className="text-[9px] text-gray-300 tracking-widest uppercase">—</span>
-                  }
-                </td>
-                <td className="px-5 py-3">
-                  {/* Always visible edit/delete — no hover required */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setEditProduct(p)}
-                      className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase border border-gray-200 text-gray-500 hover:border-black hover:text-black transition-all"
-                    >
-                      <Pencil size={11} /> Edit
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(p.id)}
-                      className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase border border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-500 hover:bg-red-50 transition-all"
-                    >
-                      <Trash2 size={11} /> Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Add / Edit form modal */}
+      {/* Modals */}
       <AnimatePresence>
         {showForm && (
           <ProductForm
@@ -395,6 +490,7 @@ export default function AdminProducts() {
                 ...(editProduct.details || []),
                 '', '', '', ''
               ].slice(0, 4),
+              images: editProduct.images || [],
             }}
             onSave={handleEdit}
             onCancel={() => setEditProduct(null)}
@@ -402,7 +498,7 @@ export default function AdminProducts() {
         )}
       </AnimatePresence>
 
-      {/* Delete confirm modal */}
+      {/* Delete confirm */}
       <AnimatePresence>
         {deleteId && (
           <motion.div
@@ -419,9 +515,7 @@ export default function AdminProducts() {
                 <Trash2 size={20} className="text-red-400" />
               </div>
               <h3 className="font-head text-2xl tracking-widest text-black mb-2">DELETE PRODUCT</h3>
-              <p className="text-gray-500 text-sm mb-6">
-                Are you sure? This cannot be undone.
-              </p>
+              <p className="text-gray-500 text-sm mb-6">Are you sure? This cannot be undone.</p>
               <div className="flex gap-3">
                 <button
                   onClick={handleDelete}
